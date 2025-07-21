@@ -1,0 +1,38 @@
+[
+  {
+    "benchmark": "S&P 500",
+    "minimum": 5000000,
+    "correlations": {
+      "MSCI EAFE": 0.85,
+      "Bloomberg US Agg": 0.2,
+      "Russell 2000": 0.92
+    }
+  },
+  {
+    "benchmark": "MSCI EAFE",
+    "minimum": 7000000,
+    "correlations": {
+      "S&P 500": 0.85,
+      "Bloomberg US Agg": 0.15,
+      "Russell 2000": 0.88
+    }
+  },
+  {
+    "benchmark": "Bloomberg US Agg",
+    "minimum": 4000000,
+    "correlations": {
+      "S&P 500": 0.2,
+      "MSCI EAFE": 0.15,
+      "Russell 2000": 0.18
+    }
+  },
+  {
+    "benchmark": "Russell 2000",
+    "minimum": 6000000,
+    "correlations": {
+      "S&P 500": 0.92,
+      "MSCI EAFE": 0.88,
+      "Bloomberg US Agg": 0.18
+    }
+  }
+]
