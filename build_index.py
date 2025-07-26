@@ -1,9 +1,12 @@
 import json
 import os
+import time
+import logging
 from typing import List
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 from pinecone import Pinecone, ServerlessSpec
+from pinecone.core.client.exceptions import ApiException
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 
@@ -17,10 +20,32 @@ pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 INDEX_NAME = "benchmark-index"
 DIMENSION = 1536
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+
+def _with_retry(func, *args, **kwargs):
+    """Helper to retry API calls with exponential backoff."""
+    delay = 1
+    for attempt in range(3):
+        try:
+            return func(*args, **kwargs)
+        except (OpenAIError, ApiException) as exc:
+            logging.warning("Attempt %d failed: %s", attempt + 1, exc)
+            if attempt == 2:
+                logging.error("Operation failed after retries: %s", exc)
+                raise
+            time.sleep(delay)
+            delay *= 2
+
 
 def embed(text: str) -> List[float]:
-    resp = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
-    return resp.data[0].embedding
+    try:
+        resp = _with_retry(client.embeddings.create, model=EMBEDDING_MODEL, input=text)
+        return resp.data[0].embedding
+    except Exception:
+        logging.error("Failed to create embedding for '%s'", text)
+        return []
 
 
 def main() -> None:
@@ -45,6 +70,9 @@ def main() -> None:
     items = []
     for bench in data:
         vec = embed(bench["name"])
+        if not vec:
+            logging.error("Skipping '%s' due to embedding failure", bench["name"])
+            continue
 
         # Flatten the metadata to simple key-value pairs
         metadata = {

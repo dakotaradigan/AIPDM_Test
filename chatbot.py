@@ -1,9 +1,12 @@
 import json
 import os
+import time
+import logging
 from typing import List, Dict, Any
 
 from pinecone import Pinecone
-from openai import OpenAI
+from pinecone.core.client.exceptions import ApiException
+from openai import OpenAI, OpenAIError
 
 # Load the large system prompt from an external file for readability
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
@@ -35,9 +38,32 @@ pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 
+# Configure basic logging
+logging.basicConfig(level=logging.INFO)
+
+
+def _with_retry(func, *args, **kwargs):
+    """Helper to retry API calls with exponential backoff."""
+    delay = 1
+    for attempt in range(3):
+        try:
+            return func(*args, **kwargs)
+        except (OpenAIError, ApiException) as exc:
+            logging.warning("Attempt %d failed: %s", attempt + 1, exc)
+            if attempt == 2:
+                logging.error("Operation failed after retries: %s", exc)
+                raise
+            time.sleep(delay)
+            delay *= 2
+
+
 def embed(text: str) -> List[float]:
-    resp = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
-    return resp.data[0].embedding
+    try:
+        resp = _with_retry(client.embeddings.create, model=EMBEDDING_MODEL, input=text)
+        return resp.data[0].embedding
+    except Exception:
+        logging.error("Failed to create embedding for query '%s'", text)
+        return []
 
 INDEX_NAME = "benchmark-index"
 if INDEX_NAME not in pc.list_indexes().names():
@@ -66,6 +92,8 @@ def search_benchmarks(
     include_dividend: bool = False,
 ) -> List[Dict[str, Any]]:
     vec = embed(query)
+    if not vec:
+        return [{"error": "Failed to generate embeddings. Please try again later."}]
 
     pinecone_filter: Dict[str, Any] | None = None
     if filters:
@@ -231,12 +259,18 @@ def chat():
         if user.lower() in {"exit", "quit"}:
             break
         messages.append({"role": "user", "content": user})
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            tools=[{"type": "function", "function": func} for func in FUNCTIONS],
-            tool_choice="auto",
-        )
+        try:
+            response = _with_retry(
+                client.chat.completions.create,
+                model="gpt-3.5-turbo",
+                messages=messages,
+                tools=[{"type": "function", "function": func} for func in FUNCTIONS],
+                tool_choice="auto",
+            )
+        except Exception:
+            print("\nAssistant: Sorry, I'm having trouble right now. Please try again later.")
+            logging.error("Initial chat completion failed", exc_info=True)
+            continue
         msg = response.choices[0].message
         if msg.tool_calls:
             # Add the assistant message with tool calls first
@@ -256,10 +290,18 @@ def chat():
                 })
 
             # Now get the final response
-            follow = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-            )
+            try:
+                follow = _with_retry(
+                    client.chat.completions.create,
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                )
+            except Exception:
+                final = "Sorry, I'm having trouble processing that request right now."
+                messages.append({"role": "assistant", "content": final})
+                print(f"\nAssistant: {final}")
+                logging.error("Follow-up chat completion failed", exc_info=True)
+                continue
             final = follow.choices[0].message.content
             resp_count += 1
             if resp_count % 4 == 0:
