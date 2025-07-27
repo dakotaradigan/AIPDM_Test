@@ -349,6 +349,7 @@ def chat():
                 final = f"{final}\n\n{DISCLAIMER_TEXT}"
             messages.append({"role": "assistant", "content": final})
             print(f"\nAssistant: {final}")
+            print("hello world")
         else:
             final = msg.content or ""
             resp_count += 1
@@ -356,6 +357,7 @@ def chat():
                 final = f"{final}\n\n{DISCLAIMER_TEXT}"
             messages.append({"role": "assistant", "content": final})
             print(f"\nAssistant: {final}")
+            print("hello world")
 
 
 if __name__ == "__main__":
