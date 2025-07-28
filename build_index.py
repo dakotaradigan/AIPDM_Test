@@ -69,7 +69,7 @@ def main() -> None:
         items.append((bench["name"], vec, metadata))
 
     for i in range(0, len(items), 100):
-        index.upsert(items[i:i + 100])
+        index.upsert(items[i : i + 100])
 
     print(f"Upserted {len(items)} vectors to '{INDEX_NAME}'.")
 
