@@ -47,6 +47,21 @@ CHAT_MODEL = "gpt-3.5-turbo"
 MAX_MODEL_TOKENS = 16000
 TOKEN_MARGIN = 1000
 
+# Prompt and model for routing queries
+TRIAGE_MODEL = "gpt-3.5-turbo-0125"
+TRIAGE_PROMPT = (
+    "Classify the user's request as either 'minimum' or 'alternative'. "
+    "Respond with only one of these two words."
+)
+
+# Prompts for task-specific handling
+MINIMUM_PROMPT = (
+    "You answer questions about benchmark account minimums concisely."
+)
+ALTERNATIVE_PROMPT = (
+    "You suggest alternative benchmarks when the requested option isn't suitable."
+)
+
 
 def _with_retry(*, max_attempts: int = 3, **kwargs):
     """Call the OpenAI chat API with simple exponential backoff."""
@@ -299,14 +314,70 @@ def call_function(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     return {"error": f"Unknown function {name}"}
 
 
+def triage_query(query: str) -> str:
+    """Classify a user query as minimum or alternative."""
+    resp = client.chat.completions.create(
+        model=TRIAGE_MODEL,
+        messages=[
+            {"role": "system", "content": TRIAGE_PROMPT},
+            {"role": "user", "content": query},
+        ],
+    )
+    label = resp.choices[0].message.content.strip().lower()
+    if "min" in label:
+        return "minimum"
+    return "alternative"
+
+
+def handle_minimum(query: str) -> str:
+    """Respond to minimum-related queries using a dedicated prompt."""
+    resp = _with_retry(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": MINIMUM_PROMPT},
+            {"role": "user", "content": query},
+        ],
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def handle_alternative(query: str) -> str:
+    """Respond to requests for alternative benchmarks."""
+    resp = _with_retry(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": ALTERNATIVE_PROMPT},
+            {"role": "user", "content": query},
+        ],
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def chat():
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     print("Hello! I'm here to assist with benchmark eligibility questions. How can I help you today?")
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     resp_count = 0
     while True:
         user = input("\nUser: ")
         if user.lower() in {"exit", "quit"}:
             break
+
+        category = triage_query(user)
+        if category == "minimum":
+            final = handle_minimum(user)
+            resp_count += 1
+            if resp_count % DISCLAIMER_FREQUENCY == 0:
+                final = f"{final}\n\n{DISCLAIMER_TEXT}"
+            print(f"\nAssistant: {final}")
+            continue
+        if category == "alternative":
+            final = handle_alternative(user)
+            resp_count += 1
+            if resp_count % DISCLAIMER_FREQUENCY == 0:
+                final = f"{final}\n\n{DISCLAIMER_TEXT}"
+            print(f"\nAssistant: {final}")
+            continue
+
         messages.append({"role": "user", "content": user})
         if trim_history(messages):
             print("[Notice: conversation history truncated to fit token limit]")
@@ -318,18 +389,15 @@ def chat():
         )
         msg = response.choices[0].message
         if msg.tool_calls:
-            # Add the assistant message with tool calls first
             messages.append({"role": "assistant", "content": None, "tool_calls": msg.tool_calls})
             if trim_history(messages):
                 print("[Notice: conversation history truncated to fit token limit]")
 
-            # Handle each tool call individually
             for tool_call in msg.tool_calls:
                 func_name = tool_call.function.name
                 args = json.loads(tool_call.function.arguments or "{}")
                 result = call_function(func_name, args)
 
-                # Add individual tool response
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -338,7 +406,6 @@ def chat():
                 if trim_history(messages):
                     print("[Notice: conversation history truncated to fit token limit]")
 
-            # Now get the final response
             follow = client.chat.completions.create(
                 model=CHAT_MODEL,
                 messages=messages,
