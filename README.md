@@ -19,6 +19,13 @@ After the index is built, start the chatbot:
 python chatbot.py
 ```
 
+Alternatively, you can experiment with a LangGraph-based workflow that routes
+questions through triage, minimum checks, or benchmark alternative logic:
+
+```bash
+python graph_agent.py
+```
+
 `search_benchmarks` accepts an optional `filters` dictionary to narrow results
 by metadata fields (e.g. `{ "region": "US", "pe_ratio": {"$gt": 20} }`).
 
