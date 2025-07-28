@@ -9,9 +9,13 @@ import time
 from pinecone import Pinecone
 from openai import OpenAI
 
-# Load the large system prompt from an external file for readability
-with open("system_prompt.txt", "r", encoding="utf-8") as f:
-    SYSTEM_PROMPT = f.read()
+# Load the large system prompt and specialized prompts
+from agents import (
+    SYSTEM_PROMPT,
+    TRIAGE_PROMPT,
+    MINIMUM_PROMPT,
+    ALTERNATIVE_PROMPT,
+)
 
 # Extract the disclaimer text from the system prompt so it can be
 # appended to responses in the chat loop. The line in the prompt looks
