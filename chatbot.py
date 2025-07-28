@@ -18,6 +18,7 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 # like:
 # "- Provide disclaimer every 3-4 interactions: *\u201cThis assistant ... authority.\u201d*"
 import re
+
 match = re.search(
     r"disclaimer every 3-4 interactions:\s*\*?[\"\u201c](.+?)[\"\u201d]\*?",
     SYSTEM_PROMPT,
@@ -55,9 +56,7 @@ TRIAGE_PROMPT = (
 )
 
 # Prompts for task-specific handling
-MINIMUM_PROMPT = (
-    "You answer questions about benchmark account minimums concisely."
-)
+MINIMUM_PROMPT = "You answer questions about benchmark account minimums concisely."
 ALTERNATIVE_PROMPT = (
     "You suggest alternative benchmarks when the requested option isn't suitable."
 )
@@ -78,14 +77,17 @@ def _with_retry(*, max_attempts: int = 3, **kwargs):
                 max_attempts,
                 exc,
             )
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
+
 
 def embed(text: str) -> List[float]:
     resp = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
     return resp.data[0].embedding
 
 
-def num_tokens_from_messages(messages: List[Dict[str, Any]], model: str = CHAT_MODEL) -> int:
+def num_tokens_from_messages(
+    messages: List[Dict[str, Any]], model: str = CHAT_MODEL
+) -> int:
     """Return total token count for a list of chat messages."""
     try:
         encoding = tiktoken.encoding_for_model(model)
@@ -115,12 +117,16 @@ def num_tokens_from_messages(messages: List[Dict[str, Any]], model: str = CHAT_M
     return total_tokens
 
 
-def trim_history(messages: List[Dict[str, Any]], limit: int = MAX_MODEL_TOKENS - TOKEN_MARGIN) -> bool:
+def trim_history(
+    messages: List[Dict[str, Any]], limit: int = MAX_MODEL_TOKENS - TOKEN_MARGIN
+) -> bool:
     """Trim oldest user/assistant pairs until total tokens are under limit."""
     truncated = False
     while num_tokens_from_messages(messages) > limit and len(messages) > 1:
         # Find first user message after the system prompt
-        start = next((i for i, m in enumerate(messages) if i > 0 and m["role"] == "user"), None)
+        start = next(
+            (i for i, m in enumerate(messages) if i > 0 and m["role"] == "user"), None
+        )
         if start is None:
             break
         end = start + 1
@@ -130,6 +136,7 @@ def trim_history(messages: List[Dict[str, Any]], limit: int = MAX_MODEL_TOKENS -
         del messages[start:end]
         truncated = True
     return truncated
+
 
 INDEX_NAME = "benchmark-index"
 if INDEX_NAME not in pc.list_indexes().names():
@@ -196,12 +203,16 @@ def get_minimum(name: str, include_dividend: bool = False) -> Dict[str, Any]:
             "account_minimum": bench["account_minimum"],
         }
         if include_dividend:
-            result["dividend_yield"] = bench.get("fundamentals", {}).get("dividend_yield")
+            result["dividend_yield"] = bench.get("fundamentals", {}).get(
+                "dividend_yield"
+            )
         return result
     return {"error": f"Benchmark '{name}' not found"}
 
 
-def blend_minimum(allocations: List[Dict[str, Any]], include_dividend: bool = False) -> Dict[str, Any]:
+def blend_minimum(
+    allocations: List[Dict[str, Any]], include_dividend: bool = False
+) -> Dict[str, Any]:
     total_weight = sum(a.get("weight", 0) for a in allocations)
     if abs(total_weight - 1.0) > 1e-6:
         return {"error": f"weights sum to {total_weight}"}
@@ -235,7 +246,7 @@ FUNCTIONS = [
                 "top_k": {"type": "integer", "default": 3},
                 "filters": {
                     "type": "object",
-                    "description": "Optional metadata filters. Example: {\"pe_ratio\": {\"$gt\": 20}, \"region\": \"US\"}",
+                    "description": 'Optional metadata filters. Example: {"pe_ratio": {"$gt": 20}, "region": "US"}',
                 },
                 "include_dividend": {
                     "type": "boolean",
@@ -354,7 +365,9 @@ def handle_alternative(query: str) -> str:
 
 
 def chat():
-    print("Hello! I'm here to assist with benchmark eligibility questions. How can I help you today?")
+    print(
+        "Hello! I'm here to assist with benchmark eligibility questions. How can I help you today?"
+    )
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     resp_count = 0
     while True:
@@ -389,7 +402,9 @@ def chat():
         )
         msg = response.choices[0].message
         if msg.tool_calls:
-            messages.append({"role": "assistant", "content": None, "tool_calls": msg.tool_calls})
+            messages.append(
+                {"role": "assistant", "content": None, "tool_calls": msg.tool_calls}
+            )
             if trim_history(messages):
                 print("[Notice: conversation history truncated to fit token limit]")
 
@@ -398,11 +413,13 @@ def chat():
                 args = json.loads(tool_call.function.arguments or "{}")
                 result = call_function(func_name, args)
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(result)
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result),
+                    }
+                )
                 if trim_history(messages):
                     print("[Notice: conversation history truncated to fit token limit]")
 
